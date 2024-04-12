@@ -28,17 +28,19 @@ fn get_gauge(name: String, help: String, value: f64) -> Result<GenericGauge<Atom
 
 fn convert_to_bytes(value: f64, unit: String) -> Result<f64> {
     let mut map: HashMap<&str, f64> = HashMap::new();
+    map.insert("B", 1f64);
     map.insert("kB", 1000f64);
     map.insert("MB", 1000f64 * 1000f64);
     map.insert("GB", 1000f64 * 1000f64 * 1000f64);
     map.insert("TB", 1000f64 * 1000f64 * 1000f64 * 1000f64);
 
     let Some(conversion_rate) = map.get(unit.as_str()) else {
-        return Err(anyhow!("Couldn't convert unit to bytes, that was weird.."));
+        return Err(anyhow!("Couldn't convert unit '{}' to bytes, that was weird..", unit));
     };
 
     let result = conversion_rate * value;
     Ok(result)
+
 }
 
 

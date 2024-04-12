@@ -1,0 +1,26 @@
+[package]
+name = "docker-stat-exporter"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+prometheus = "0.13.3"
+
+anyhow = "1.0.82"
+thiserror = "1.0.58"
+
+axum = "0.7.5"
+axum-macros = "0.4.1"
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.68"
+serde_with = { version = "3.5.1", features = ["time_0_3"] }
+
+dockworker = "0.5.0"
+
+futures = "0.3.30"
+
+tokio = { version = "1.0", features = ["full"] }
+
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1,17 +1,14 @@
 mod error;
+mod convert_to_bytes;
+mod docker;
 
-use std::collections::HashMap;
-use std::fmt::Debug;
-use std::process::Command;
 use prometheus::{Registry, Gauge, TextEncoder, Encoder};
 use prometheus::core::{AtomicF64, GenericGauge};
 use anyhow::{Result, anyhow};
-use futures::stream::StreamExt;
-use axum::{
-    routing::{get},
-    Router,
-};
+use axum::{routing::{get}, Router};
 use serde::{Deserialize, Serialize};
+use crate::convert_to_bytes::convert_to_bytes;
+use crate::docker::DockerContainerStats;
 use crate::error::ApiResult;
 
 fn percent_gauge(name: String, mut percent_string: String, help: String) -> Result<GenericGauge<AtomicF64>> {
@@ -26,24 +23,6 @@ fn get_gauge(name: String, help: String, value: f64) -> Result<GenericGauge<Atom
     Ok(gauge)
 }
 
-fn convert_to_bytes(value: f64, unit: String) -> Result<f64> {
-    let mut map: HashMap<&str, f64> = HashMap::new();
-    map.insert("B", 1f64);
-    map.insert("kB", 1000f64);
-    map.insert("MB", 1000f64 * 1000f64);
-    map.insert("GB", 1000f64 * 1000f64 * 1000f64);
-    map.insert("TB", 1000f64 * 1000f64 * 1000f64 * 1000f64);
-
-    let Some(conversion_rate) = map.get(unit.as_str()) else {
-        return Err(anyhow!("Couldn't convert unit '{}' to bytes, that was weird..", unit));
-    };
-
-    let result = conversion_rate * value;
-    Ok(result)
-
-}
-
-
 fn parse_io_str(str: String) -> Result<f64> {
     let backwards_unit = str.chars().rev().take_while(|c| c.is_alphabetic()).collect::<String>();
     let unit = backwards_unit.chars().rev().collect::<String>();
@@ -57,7 +36,7 @@ fn parse_io_str(str: String) -> Result<f64> {
 fn parse_netio_str(netio_string: &str) -> Result<(f64, f64)> {
     let mut input_output: Vec<&str> = netio_string.split(" / ").collect();
     let (Some(output), Some(input)) = (input_output.pop(), input_output.pop()) else {
-        return Err(anyhow!("Bad netio string"));
+        return Err(anyhow!("Bad netio string: '{}'", netio_string));
     };
 
     let inp = parse_io_str(input.to_string())?;
@@ -76,56 +55,25 @@ fn gauges_for_container(stat: &DockerContainerStats) -> Result<Vec<GenericGauge<
     Ok(vec![cpu_gauge, mem_gauge, net_input_gauge, net_output_gauge])
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
-struct DockerContainerStats {
-    container: String,
-    cpuPerc: String,
-    memPerc: String,
-    netIO: String,
-}
-
-const DOCKER_FORMAT: &str = r#"{"container": "{{.Name}}", "cpuPerc": "{{.CPUPerc}}", "memPerc": "{{.MemPerc}}", "netIO": "{{.NetIO}}"}"#;
-
-fn get_docker_stats() -> Result<Vec<DockerContainerStats>> {
-    let output = Command::new("docker")
-        .args(&["stats", "--format", DOCKER_FORMAT, "--no-stream"])
-        .output()?;
-
-    let stdout = String::from_utf8(output.stdout)?;
-    let stderr = String::from_utf8(output.stderr)?;
-
-    if !output.status.success() {
-        eprintln!("`docker stats` returned non-zero exit code with output: \n{}\n{}", stdout, stderr);
-        return Err(anyhow::anyhow!("Docker stats command did bad :("));
-    }
-
-    let json_list_content = stdout.lines().collect::<Vec<&str>>().join(",");
-    let json_string = format!("[{}]", json_list_content);
-
-    let result = serde_json::from_str::<Vec<DockerContainerStats>>(json_string.as_str())?;
-    Ok(result)
-}
-
 fn get_prometheus_format(stats: Vec<DockerContainerStats>) -> Result<String> {
     let registry = Registry::new();
     for container_stats in &stats {
-        for x in gauges_for_container(container_stats)? {
-            registry.register(Box::new(x))?;
+        for gauge in gauges_for_container(container_stats)? {
+            registry.register(Box::new(gauge))?;
         }
     }
 
     let mut buffer = vec![];
     let encoder = TextEncoder::new();
     let metric_families = registry.gather();
-    encoder.encode(&metric_families, &mut buffer).unwrap();
+    encoder.encode(&metric_families, &mut buffer)?;
 
     let str = String::from_utf8(buffer)?;
     Ok(str)
 }
 
-
 async fn docker_stats_metrics() -> ApiResult<String> {
-    let stats = get_docker_stats()?;
+    let stats = docker::stats()?;
     let prometheus_stuff = get_prometheus_format(stats)?;
     Ok(prometheus_stuff)
 }
@@ -138,4 +86,3 @@ async fn main() -> Result<()> {
     axum::serve(listener, app).await?;
     Ok(())
 }
-

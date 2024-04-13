@@ -310,6 +310,7 @@ dependencies = [
  "axum-macros",
  "dockworker",
  "futures",
+ "lazy_static",
  "prometheus",
  "serde",
  "serde_json",

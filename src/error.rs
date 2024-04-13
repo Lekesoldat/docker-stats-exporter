@@ -1,9 +1,7 @@
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-
 use serde_with::DisplayFromStr;
-
 
 pub type ApiResult<T, E = ApiError> = Result<T, E>;
 
@@ -13,7 +11,7 @@ pub enum ApiError {
     Anyhow(#[from] anyhow::Error),
 
     #[error("Docker error yolo")]
-    Dockworker(#[from] dockworker::errors::Error)
+    Dockworker(#[from] dockworker::errors::Error),
 }
 
 impl IntoResponse for ApiError {
@@ -30,9 +28,7 @@ impl IntoResponse for ApiError {
 
         (
             self.status_code(),
-            Json(ErrorResponse {
-                message: &self,
-            }),
+            Json(ErrorResponse { message: &self }),
         )
             .into_response()
     }

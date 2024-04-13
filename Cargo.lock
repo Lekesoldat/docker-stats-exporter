@@ -302,7 +302,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "docker-stat-exporter"
+name = "docker-stats-exporter"
 version = "0.1.0"
 dependencies = [
  "anyhow",

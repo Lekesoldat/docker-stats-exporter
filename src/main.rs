@@ -6,7 +6,8 @@ use prometheus::{Registry, Gauge, TextEncoder, Encoder};
 use prometheus::core::{AtomicF64, GenericGauge};
 use anyhow::{Result, anyhow};
 use axum::{routing::{get}, Router};
-use serde::{Deserialize, Serialize};
+use tower_http::trace::TraceLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use crate::convert_to_bytes::convert_to_bytes;
 use crate::docker::DockerContainerStats;
 use crate::error::ApiResult;
@@ -46,9 +47,9 @@ fn parse_netio_str(netio_string: &str) -> Result<(f64, f64)> {
 }
 
 fn gauges_for_container(stat: &DockerContainerStats) -> Result<Vec<GenericGauge<AtomicF64>>> {
-    let cpu_gauge = percent_gauge(format!("{}_cpu_usage", stat.container), stat.cpuPerc.clone(), format!("CPU Usage for the '{}' container", stat.container))?;
-    let mem_gauge = percent_gauge(format!("{}_mem_usage", stat.container), stat.memPerc.clone(), format!("MEM Usage for the '{}' container", stat.container))?;
-    let (input, output) = parse_netio_str(stat.netIO.as_str())?;
+    let cpu_gauge = percent_gauge(format!("{}_cpu_usage", stat.container), stat.cpu_perc.clone(), format!("CPU Usage for the '{}' container", stat.container))?;
+    let mem_gauge = percent_gauge(format!("{}_mem_usage", stat.container), stat.mem_perc.clone(), format!("MEM Usage for the '{}' container", stat.container))?;
+    let (input, output) = parse_netio_str(stat.net_io.as_str())?;
     let net_input_gauge = get_gauge(format!("{}_network_input_bytes", stat.container), format!("Help"), input)?;
     let net_output_gauge = get_gauge(format!("{}_network_output_bytes", stat.container), format!("Help"), output)?;
 
@@ -80,9 +81,22 @@ async fn docker_stats_metrics() -> ApiResult<String> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt::init();
-    let app = Router::new().route("/docker-stats/metrics", get(docker_stats_metrics));
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3069").await?;
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                "docker_stats_exporter=debug,tower_http=debug,axum::rejection=trace".into()
+            }),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
+    let bind_address = "0.0.0.0:3069";
+    tracing::info!("Starting docker stats exporter on {}", bind_address);
+
+    let app = Router::new()
+        .route("/docker-stats/metrics", get(docker_stats_metrics))
+        .layer(TraceLayer::new_for_http());
+    let listener = tokio::net::TcpListener::bind(bind_address).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }

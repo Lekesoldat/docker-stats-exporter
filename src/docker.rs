@@ -5,12 +5,12 @@ use anyhow::{Result, anyhow};
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct DockerContainerStats {
     pub container: String,
-    pub cpuPerc: String,
-    pub memPerc: String,
-    pub netIO: String,
+    pub cpu_perc: String,
+    pub mem_perc: String,
+    pub net_io: String,
 }
 
-const DOCKER_FORMAT: &str = r#"{"container": "{{.Name}}", "cpuPerc": "{{.CPUPerc}}", "memPerc": "{{.MemPerc}}", "netIO": "{{.NetIO}}"}"#;
+const DOCKER_FORMAT: &str = r#"{"container": "{{.Name}}", "cpu_perc": "{{.CPUPerc}}", "mem_perc": "{{.MemPerc}}", "net_io": "{{.NetIO}}"}"#;
 
 pub fn stats() -> Result<Vec<DockerContainerStats>> {
     let output = Command::new("docker")
